@@ -1,0 +1,17 @@
+{
+    "name": "vpyankov/json-api-transformer",
+    "description": "implementation and methods for json api transformer",
+    "type": "project",
+    "license": "MIT",
+    "require": {
+        "php": ">=5.3.2"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "@stable"
+    },
+    "autoload": {
+        "psr-4": {
+            "XdgBaseDir\\": "src/"
+        }
+    }
+}
