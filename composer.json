@@ -11,7 +11,7 @@
     },
     "autoload": {
         "psr-4": {
-            "XdgBaseDir\\": "src/"
+            "lemax10\\JsonApiTransformer\\": "src/"
         }
     }
 }
