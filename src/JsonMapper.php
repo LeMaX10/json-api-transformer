@@ -2,12 +2,6 @@
 namespace lemax10\JsonApiTransformer;
 
 interface JsonMapper {
-
-    const GET_METHOD    = 'GET';
-    const POST_METHOD   = 'POST';
-    const PUT_METHOD    = 'PUT';
-    const DELETE_METHOD = 'DELETE';
-
     /**
      * Returns a string representing the resource name
      * as it will be shown after the mapping.

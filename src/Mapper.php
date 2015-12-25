@@ -13,6 +13,11 @@ use Illuminate\Database\Eloquent\Collection;
 
 class Mapper
 {
+    const GET_METHOD    = 'GET';
+    const POST_METHOD   = 'POST';
+    const PUT_METHOD    = 'PUT';
+    const DELETE_METHOD = 'DELETE';
+
     const ATTR_DATA = 'data';
     const ATTR_TYPE = 'type';
     const ATTR_META = 'meta';
@@ -149,7 +154,7 @@ class Mapper
             if(isset($param['as_id']) && isset($model->{$param['as_id']}))
                 $routeParams['id'] = $model->{$param['as_id']};
 
-            $method = isset($param['type']) ? $param['type'] : 'GET';
+            $method = isset($param['type']) ? $param['type'] : self::GET_METHOD;
             $links[$type] = [
                 'type' => strtolower($method),
                 'url' => route($param['name'], $routeParams)
