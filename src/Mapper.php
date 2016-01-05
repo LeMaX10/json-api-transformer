@@ -171,7 +171,7 @@ class Mapper
     {
         $result = [];
         foreach($this->transformer->getRelationships() as $modelMethod => $relation) {
-            $result[self::ATTR_RELATIONSHIP][$modelMethod] = [
+            $result[$modelMethod] = [
                 self::ATTR_DATA => [
                     'type' => (new $relation['transformer'])->getAlias()
                 ]
@@ -182,7 +182,7 @@ class Mapper
                 if(!isset($this->model->{$modelAttribute}))
                     continue;
 
-                $result[self::ATTR_RELATIONSHIP][$modelMethod][self::ATTR_DATA][$field] = $model->{$modelAttribute};
+                $result[$modelMethod][self::ATTR_DATA][$field] = $model->{$modelAttribute};
             }
         }
 
