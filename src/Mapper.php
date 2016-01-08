@@ -31,7 +31,8 @@ class Mapper
 
     protected $transformer;
     protected $model;
-
+    protected $paginate = false;
+    protected $hide = [];
     public function __construct($transformer)
     {
         $this->transformer = $transformer;
@@ -50,6 +51,7 @@ class Mapper
 
     public function toJsonPaginationResponse($result)
     {
+        $this->paginate = true;
         $responseBody = $this->response($result->getCollection());
         $this->createPagination($result);
         $responseBody->put('jsonapi', '1.0');
@@ -86,6 +88,7 @@ class Mapper
             $this->responseBody->put(self::ATTR_DATA, [$this->modelMapping()]);
 
         $this->getIncluded($this->model);
+
         return $this->responseBody;
     }
 
@@ -113,36 +116,44 @@ class Mapper
 
     protected function getIdProperty($model, &$item)
     {
+        $model = collect($model);
         foreach($this->transformer->getIdProperties() as $idAttr) {
-            if(!isset($model->{$idAttr}))
+            if(empty($model->get($idAttr)))
                 continue;
 
-            $item->put($idAttr, $model->{$idAttr});
+            $item->put($idAttr, $model->get($idAttr));
         }
 
+        unset($model);
         return $this;
     }
 
     protected function getFieldsModel($model, &$item) {
-
-        foreach($this->transformer->getHideProperties() as $fieldHidden) {
-            if(!isset($model->{$fieldHidden}))
-                continue;
-
-            unset($model->{$fieldHidden});
-        }
+        $model = collect($model);
+        $model = $model->except($this->transformer->getHideProperties());
         foreach($this->transformer->getAliasedProperties() as $field => $alias) {
-            if(!isset($model->{$field}))
+            if(empty($value = $model->get($field)))
                 continue;
 
-            $model->{$alias} = $model->{$field};
-            unset($model->{$field});
+            $model->put($alias, $value)->pull($field);
         }
 
         if($filter = \Request::input('filter.'. $this->transformer->getAlias(), false))
-            $model = collect($model)->only(explode(',', $filter));
+            $model = $model->only(explode(',', $filter));
+
+        if(count($this->transformer->getRelationships())) {
+            $relationships = $this->transformer->getRelationships();
+            $model = $model->transform(function ($value, $key) use (&$relationships) {
+                if (!in_array($key, array_keys($relationships)))
+                    return $value;
+
+                $transformer = $relationships[$key];
+                return (new Mapper(new $transformer['transformer']))->response($value);
+            });
+        }
 
         $item->put(self::ATTR_ATTRIBUTES, $model);
+        unset($model);
         return $this;
     }
 
@@ -150,25 +161,30 @@ class Mapper
     {
         $links = [];
         foreach($this->transformer->getUrls() as $type => $param) {
-            $routeParams = ['id' => ''];
-            if(isset($param['as_id']) && isset($model->{$param['as_id']}))
-                $routeParams['id'] = $model->{$param['as_id']};
+            $routeParams = new Collection();
+            $routeParam  = isset($param['routeParam']) ? $param['routeParam'] : 'id';
+            if(isset($param['as_' . $routeParam])) {
+                $modelValue = is_array($model) ? $model[$param['as_' . $routeParam]] : $model->{$param['as_' . $routeParam]};
+                $routeParams->put($routeParam, $modelValue);
+            }
 
             $method = isset($param['type']) ? $param['type'] : self::GET_METHOD;
             $links[$type] = [
                 'type' => strtolower($method),
-                'url' => route($param['name'], $routeParams)
+                'url' => route($param['name'], $routeParams->toArray())
             ];
         }
 
         if(count($links))
             $item->put(self::ATTR_LINKS, $links);
 
+        unset($model);
         return $this;
     }
 
     protected function getRelationsShip($model, &$item)
     {
+
         $result = [];
         foreach($this->transformer->getRelationships() as $modelMethod => $relation) {
             $result[$modelMethod] = [
@@ -189,11 +205,12 @@ class Mapper
         if(count($result))
             $item->put(self::ATTR_RELATIONSHIP, $result);
 
+        unset($result);
         return $this;
     }
 
     protected function getIncluded($model) {
-        if(!$included = \Request::get('include', false))
+        if($this->paginate || !$included = \Request::get('include', false))
             return false;
 
         if(!in_array($included, array_keys($this->transformer->getRelationships())))
@@ -223,6 +240,16 @@ class Mapper
             return $this;
 
         $item->put(self::ATTR_META, $collection);
+
+        unset($collection);
         return $this;
+    }
+
+    public static function customObject($type, $attributes)
+    {
+        return [
+            self::ATTR_TYPE => $type,
+            self::ATTR_ATTRIBUTES => $attributes
+        ];
     }
 }
