@@ -232,7 +232,7 @@ class Mapper
             if(!method_exists($model, "get" . ucfirst($metaItem)) || !count($return = $model->{"get".ucfirst($metaItem)}()))
                 break;
 
-            $meta[$metaItem] = array_shift($return);
+            $meta = array_merge($meta, $return);
         }
 
         if(count($meta))
