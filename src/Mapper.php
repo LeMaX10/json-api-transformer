@@ -473,12 +473,3 @@ class Mapper
         ];
     }
 }
-
-    public static function customObject($type, $attributes)
-    {
-        return [
-            self::ATTR_TYPE => $type,
-            self::ATTR_ATTRIBUTES => $attributes
-        ];
-    }
-}
