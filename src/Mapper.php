@@ -10,6 +10,7 @@ namespace lemax10\JsonApiTransformer;
 
 
 use Illuminate\Database\Eloquent\Collection;
+use lemax10\JsonApiTransformer\Response\ObjectResponse;
 
 class Mapper
 {
@@ -35,26 +36,22 @@ class Mapper
     protected $hide = [];
     public function __construct($transformer)
     {
-        $this->transformer = $transformer;
+        $this->transformer = new $transformer;
         $this->responseBody = new Collection();
     }
 
     public function toJsonArrayResponse($object)
     {
-        $respose = $this->response($object);
-        $respose->put(self::ATTR_META, ['items' => count($object)]);
-        $respose->put('jsonapi', '1.0');
-        return response()->json($respose, 200);
+        $this->model = collect($object);
+        $this->responseBody->put(self::ATTR_DATA, $this->collection());
+        $this->responseBody->put(self::ATTR_META, ['items' => count($object)]);
+        $this->responseBody->put('jsonapi', '1.0');
+        return response()->json($this->responseBody, 200);
     }
 
     public function toJsonObjectResponse($object)
     {
-        if(!is_object($object))
-            throw new \RuntimeException('Error loading response data');
-
-        $responseBody = $this->response($object);
-        $responseBody->put('jsonapi', '1.0');
-        return response()->json($responseBody, 200);
+        return (new ObjectResponse($this->transformer, $object))->response();
     }
 
     public function toJsonPaginationResponse($result)
@@ -92,10 +89,7 @@ class Mapper
 
         if($this->model instanceof Collection)
             $this->responseBody->put(self::ATTR_DATA, $this->collection());
-        else if(is_array($this->model)) {
-            $this->model = collect($this->model);
-            $this->responseBody->put(self::ATTR_DATA, $this->collection());
-        } else
+        else
             $this->responseBody->put(self::ATTR_DATA, [$this->modelMapping()]);
 
         $this->getIncluded($this->model);
@@ -243,7 +237,7 @@ class Mapper
             if(!method_exists($model, "get" . ucfirst($metaItem)) || !count($return = $model->{"get".ucfirst($metaItem)}()))
                 break;
 
-            $meta[$metaItem] = array_shift($return);
+            $meta = array_merge($meta, $return);
         }
 
         if(count($meta))
