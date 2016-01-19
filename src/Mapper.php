@@ -39,6 +39,14 @@ class Mapper
         $this->responseBody = new Collection();
     }
 
+    public function toJsonArrayResponse($object)
+    {
+        $respose = $this->response($object);
+        $respose->put(self::ATTR_META, ['items' => count($object)]);
+        $respose->put('jsonapi', '1.0');
+        return response()->json($respose, 200);
+    }
+
     public function toJsonObjectResponse($object)
     {
         if(!is_object($object))
@@ -84,7 +92,10 @@ class Mapper
 
         if($this->model instanceof Collection)
             $this->responseBody->put(self::ATTR_DATA, $this->collection());
-        else
+        else if(is_array($this->model)) {
+            $this->model = collect($this->model);
+            $this->responseBody->put(self::ATTR_DATA, $this->collection());
+        } else
             $this->responseBody->put(self::ATTR_DATA, [$this->modelMapping()]);
 
         $this->getIncluded($this->model);
@@ -232,7 +243,7 @@ class Mapper
             if(!method_exists($model, "get" . ucfirst($metaItem)) || !count($return = $model->{"get".ucfirst($metaItem)}()))
                 break;
 
-            $meta = array_merge($meta, $return);
+            $meta[$metaItem] = array_shift($return);
         }
 
         if(count($meta))
