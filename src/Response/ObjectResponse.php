@@ -204,10 +204,18 @@ class ObjectResponse
 	protected function parseIncludes($model)
 	{
 		$included = [];
+		$relationShips = [];
 		foreach($this->includes as $type => $param)
 		{
 			if(!isset($param['transformer'])) continue;
-			$current = (new self(new $param['transformer'], $this->model->{$type}))->getRelationsShips();
+			$selfTransformer = new $param['transformer'];
+			$relationShips[$type] = [
+				'type' => $selfTransformer->getAlias(),
+				'id'   => (int) $this->model->{$type}->first()->id
+			];
+
+			$current = (new self($selfTransformer, $this->model->{$type}))->getRelationsShips();
+
 			if(isset($param['relationships']) && count($param['relationships'])) {
 				$current[Mapper::ATTR_RELATIONSHIP] = [];
 				foreach ($param['relationships'] as $childType => $childParam) {
@@ -241,8 +249,10 @@ class ObjectResponse
 			$included[] = $current;
 		}
 
-
-		$this->setInclude($included);
+		if(count($included)) {
+			$model->put(Mapper::ATTR_RELATIONSHIP, $relationShips);
+			$this->setInclude($included);
+		}
 		return $model;
 	}
 
