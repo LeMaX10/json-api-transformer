@@ -10,6 +10,7 @@ namespace lemax10\JsonApiTransformer;
 
 
 use Illuminate\Database\Eloquent\Collection;
+use lemax10\JsonApiTransformer\Response\ObjectPaginationResponse;
 use lemax10\JsonApiTransformer\Response\ObjectResponse;
 
 class Mapper
@@ -57,10 +58,7 @@ class Mapper
     public function toJsonPaginationResponse($result)
     {
         $this->paginate = true;
-        $responseBody = $this->response($result->getCollection());
-        $this->createPagination($result);
-        $responseBody->put('jsonapi', '1.0');
-        return response()->json($responseBody, 200);
+        return (new ObjectPaginationResponse($this->transformer, $result))->response();
     }
 
     protected function createPagination($result)
@@ -93,7 +91,6 @@ class Mapper
             $this->responseBody->put(self::ATTR_DATA, [$this->modelMapping()]);
 
         $this->getIncluded($this->model);
-
         return $this->responseBody;
     }
 

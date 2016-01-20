@@ -54,8 +54,22 @@ class ObjectResponse
 	{
 		if(count($this->relation)) foreach($this->relation as $type => $typeOpt)
 		{
-			if(!isset($this->includes[$type]['transformer']) && isset($typeOpt['autowired']) && $typeOpt['autowired'] === true)
-				$this->includes[$type]['transformer'] = $typeOpt['tranformer'];
+			if(!isset($this->includes[$type]['transformer']) && isset($typeOpt['autowired']) && $typeOpt['autowired'] === true) {
+				if(strpos($type, '.') === false) {
+					$this->includes[$type]['transformer'] = $typeOpt['transformer'];
+					continue;
+				}
+
+				list($relinj, $reltype) = explode('.', $type);
+				if(!isset($this->relation[$relinj]))
+					continue;
+
+				if(!isset($this->includes[$relinj]['transformer']) && isset($this->relation[$relinj]))
+					$this->includes[$relinj]['transformer'] = $this->relation[$relinj]['transformer'];
+
+				$reltypeInj = (new $this->relation[$relinj]['transformer'])->getRelationships()[$reltype];
+				$this->includes[$relinj]['relationships'][$reltype]['transformer'] = $reltypeInj['transformer'];
+			}
 		}
 	}
 
@@ -124,7 +138,7 @@ class ObjectResponse
 			$transformModel = $this->parseIncludes($transformModel);
 
 		if(count($this->transformer->getMeta()))
-			$transformModel = $this->parseMeta($transformModel);
+			$this->parseMeta($transformModel);
 
 		return $transformModel;
 	}
@@ -190,10 +204,7 @@ class ObjectResponse
 				$routeParam[ltrim($type, 'as_')] = $model->get($value);
 			}
 
-			$links[$link] = [
-				'type' => (isset($linkParam['type']) ? $linkParam['type'] : Mapper::GET_METHOD),
-				'url'  => route($linkParam['name'], $routeParam)
-			];
+			$links[$link] = route($linkParam['name'], $routeParam);
 		}
 
 		$model->put(Mapper::ATTR_LINKS, $links);
@@ -279,9 +290,11 @@ class ObjectResponse
 			$meta = array_merge($meta, $this->model->{'get' . ucfirst($method)}());
 		}
 
-		if(count($meta))
+		if(count($meta)) {
+			$this->responseBody->put(Mapper::ATTR_META, $meta);
 			$model->put(Mapper::ATTR_META, $meta);
-
+		}
+		
 		return $model;
 	}
 }
