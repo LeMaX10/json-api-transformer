@@ -210,8 +210,10 @@ class ObjectResponse
 			if(!isset($param['transformer'])) continue;
 			$selfTransformer = new $param['transformer'];
 			$relationShips[$type] = [
-				'type' => $selfTransformer->getAlias(),
-				'id'   => (int) $this->model->{$type}->first()->id
+				'data' => [
+					'type' => $selfTransformer->getAlias(),
+					'id'   => (int) $this->model->{$type}->first()->id
+				]
 			];
 
 			$current = (new self($selfTransformer, $this->model->{$type}))->getRelationsShips();
@@ -226,8 +228,10 @@ class ObjectResponse
 						$current[Mapper::ATTR_RELATIONSHIP][$childType] = [];
 						foreach ($this->model->{$type}->{$childType} as $modelChild) {
 							$current[Mapper::ATTR_RELATIONSHIP][$childType][] = [
-								'type' => $relTransformer->getAlias(),
-								'id' => $modelChild->id
+								'data' => [
+									'type' => $relTransformer->getAlias(),
+									'id' => $modelChild->id
+								]
 							];
 
 							$included[] = (new self($relTransformer, $modelChild))->getRelationsShips();
@@ -237,8 +241,10 @@ class ObjectResponse
 
 					$current[Mapper::ATTR_RELATIONSHIP] = [
 						$childType => [
-							'type' => $relTransformer->getAlias(),
-							'id' => (int) $this->model->{$type}->{$childType}->id
+							'data' => [
+								'type' => $relTransformer->getAlias(),
+								'id' => (int) $this->model->{$type}->{$childType}->id
+							]
 						]
 					];
 
