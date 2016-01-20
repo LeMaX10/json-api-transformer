@@ -3,26 +3,64 @@ namespace lemax10\JsonApiTransformer\Response;
 
 use Illuminate\Support\Collection;
 use lemax10\JsonApiTransformer\Mapper;
+use Request;
 
 class ObjectResponse
 {
 	protected $includes = [];
-	protected $responseIncludes = [];
+	protected $loadIncludes = [];
+	protected $relation = [];
 	protected $relationships = [];
 	protected $responseBody;
 	protected $transformer;
 	protected $model;
 
-	public function __construct($transformer, $model)
+	public function __construct($transformer, $model = false)
 	{
-		$this->responseBody = new Collection();
+
+		$this->responseBody = new Collection(['jsonapi'   => '1.0']);
 		$this->transformer = $transformer;
-		$this->model = $model;
-		$this->initIncludes();
+		if($model) {
+			$this->model = $model;
+			$this->initIncludes();
+		}
 	}
+
 	protected function initIncludes()
 	{
-		$relation = $this->transformer->getRelationships();
+		$this->relation = $this->transformer->getRelationships();
+		$this->queryIncludes();
+		$this->autowiredIncludes();
+
+		if(count($this->includes))
+			$this->model->load($this->getLoadingIncluded());
+	}
+
+	protected function getLoadingIncluded()
+	{
+		$included = [];
+		foreach($this->includes as $include => $paramInclude) {
+			if(isset($paramInclude['relationships']))
+				foreach(array_keys($paramInclude['relationships']) as $load)
+					$included[] = join('.', [$include, $load]);
+			else
+				$included[] = $include;
+		}
+
+		return $included;
+	}
+
+	protected function autowiredIncludes()
+	{
+		if(count($this->relation)) foreach($this->relation as $type => $typeOpt)
+		{
+			if(!isset($this->includes[$type]['transformer']) && isset($typeOpt['autowired']) && $typeOpt['autowired'] === true)
+				$this->includes[$type]['transformer'] = $typeOpt['tranformer'];
+		}
+	}
+
+	protected function queryIncludes()
+	{
 		if(\Request::has('includes')) {
 			$include = explode(',', \Request::input('includes'));
 			foreach ($include as $rel)
@@ -30,111 +68,204 @@ class ObjectResponse
 				if(strpos($rel, ".") !== false)
 				{
 					list($relinj, $reltype) = explode('.', $rel);
-					if(!isset($relation[$relinj]))
+					if(!isset($this->relation[$relinj]))
 						continue;
 
-					$reltypeInj = (new $relation[$relinj]['transformer'])->getRelationships()[$reltype];
-					$this->includes[$rel] = $reltypeInj['transformer'];
+					if(!isset($this->includes[$relinj]['transformer']) && isset($this->relation[$relinj]))
+						$this->includes[$relinj]['transformer'] = $this->relation[$relinj]['transformer'];
+
+					$reltypeInj = (new $this->relation[$relinj]['transformer'])->getRelationships()[$reltype];
+					$this->includes[$relinj]['relationships'][$reltype]['transformer'] = $reltypeInj['transformer'];
 					continue;
 				}
 
-				if(!isset($relation[$rel]))
+				if(!isset($this->relation[$rel]))
 					continue;
 
-				$this->includes[$rel] = $relation[$rel]['transformer'];
+				$this->includes[$rel]['transformer'] = $this->relation[$rel]['transformer'];
 			}
 		}
-
-		if(count($relation)) foreach($relation as $type => $typeOpt)
-		{
-			if(!isset($this->includes[$type]) && isset($typeOpt['autowired']) && $typeOpt['autowired'] === true)
-				$this->includes[$type] = $typeOpt['tranformer'];
-		}
-
-		$this->model->load(array_keys($this->includes));
-		unset($relation, $include);
 	}
 
 	public function response()
 	{
-		return response()->json($this->getResponse());
+		return response()->json($this->getResponse($this->model));
 	}
 
 	public function getResponse()
 	{
-		$includes = $this->getIncludes($this->model);
-		$data = $this->getModel($this->model);
-		if(method_exists($this->model, 'getMeta') && count($this->model->getMeta()))
-			$data = array_merge($data, [Mapper::ATTR_META => $this->model->getMeta()]);
+		if($this->model instanceof \Illuminate\Database\Eloquent\Collection)
+			$this->setData($this->transformCollection($this->model));
+		else
+			$this->setData([$this->transformModel($this->model)]);
 
-		$this->responseBody->put(Mapper::ATTR_DATA, [$data]);
-		if(count($includes))
-			$this->responseBody->put(Mapper::ATTR_INCLUDES, $includes);
 		return $this->responseBody;
 	}
 
-	protected function getModel($model = false)
+	public function transformCollection(\Illuminate\Database\Eloquent\Collection $collection)
 	{
-		if(!$model)
-			$model = $this->model;
-
-		return array_merge(
-			$this->getOptions($model),
-			$this->getAttributes($model),
-			$this->getRelationships()
-		);
+		return $collection->transform(function($value, $key) {
+			return $this->transformModel($value);
+		});
 	}
+
+	public function transformModel($model)
+	{
+		$transformModel = new Collection([
+			Mapper::ATTR_TYPE => $this->transformer->getAlias(),
+			Mapper::ATTR_IDENTIFIER => $this->getIdentifier($model),
+			Mapper::ATTR_ATTRIBUTES => $this->getAttributes($model)
+		]);
+
+		if(count($this->transformer->getUrls()))
+			$transformModel = $this->parseUrls($transformModel);
+
+		if(count($this->includes))
+			$transformModel = $this->parseIncludes($transformModel);
+
+		if(count($this->transformer->getMeta()))
+			$transformModel = $this->parseMeta($transformModel);
+
+		return $transformModel;
+	}
+
+	protected function getIdentifier($model)
+	{
+		return 1;
+	}
+
 	protected function getAttributes($model)
 	{
-		$model = collect($model)->except(array_keys($this->includes));
+		$model = collect($model->getAttributes());
+		if(Request::has('filter.' . $this->transformer->getAlias()))
+			return $model->only(explode(',', Request::input('filter.' . $this->transformer->getAlias())));
 
-		if(\Request::has('filter.'. $this->transformer->getAlias()))
-			$model = $model->only(explode(',', \Request::input('filter.' . $this->transformer->getAlias())));
+		if(count($this->transformer->getHideProperties()))
+			$model = $model->except($this->transformer->getHideProperties());
 
-		return [
-			Mapper::ATTR_ATTRIBUTES => $model
-		];
-	}
+		if(count($this->transformer->getAliasedProperties())) {
+			foreach($this->transformer->getAliasedProperties() as $modelField => $aliasField) {
+				if(empty($model->get($modelField)))
+					continue;
 
-	protected function getOptions($model)
-	{
-		$return = [
-			Mapper::ATTR_TYPE => $this->transformer->getAlias(),
-			'id' => $model->id
-		];
-
-		return $return;
-	}
-
-	protected function getIncludes($model)
-	{
-		$includes = [];
-		foreach($this->includes as $type => $transformer) {
-			if(strpos($type, ".") !== false) {
-				list($relation, $method) = explode('.', $type);
-				$this->relationships[$method]['data']['id'] = $model->{$relation}->{$method}->id;
-				$this->relationships[$method]['data']['type'] = $method;
-				$includes[] = (new self(new $transformer, $model->{$relation}->{$method}))->getModel();
-				unset($model->{$relation}->{$method});
-				continue;
-
+				$model->put($aliasField, $model->get($modelField))->pull($modelField);
 			}
-
-			$this->relationships[$type]['data']['id'] = $model->{$type}->id;
-			$this->relationships[$type]['data']['type'] = (new $transformer)->getAlias();
-			$includes[] = (new self(new $transformer, $model->{$type}))->getModel();
 		}
 
-		return $includes;
+		return $model;
 	}
 
-	protected function getRelationships()
+	public function addData($data)
 	{
-		if(!count($this->relationships))
-			return [];
+		$this->responseBody->get(Mapper::ATTR_DATA)->push($data);
+		return $this;
+	}
 
-		return [
-			Mapper::ATTR_RELATIONSHIP => $this->relationships
-		];
+	public function setData($data)
+	{
+		$this->responseBody->put(Mapper::ATTR_DATA, $data);
+		return $this;
+	}
+
+	public function setInclude($include)
+	{
+		$this->responseBody->put(Mapper::ATTR_INCLUDES, $include);
+		return $this;
+	}
+
+	public function addInclude($include)
+	{
+		$this->responseBody->get(Mapper::ATTR_INCLUDES)->push($include);
+		return $this;
+	}
+
+	protected function parseUrls($model)
+	{
+		$links = [];
+		foreach($this->transformer->getUrls() as $link => $linkParam)
+		{
+			$routeParam = [];
+			foreach($linkParam as $type => $value) {
+				if(in_array($type, ['name']) || strpos($type, 'as_') === false || empty($model->get($value))) continue;
+				$routeParam[ltrim($type, 'as_')] = $model->get($value);
+			}
+
+			$links[$link] = [
+				'type' => (isset($linkParam['type']) ? $linkParam['type'] : Mapper::GET_METHOD),
+				'url'  => route($linkParam['name'], $routeParam)
+			];
+		}
+
+		$model->put(Mapper::ATTR_LINKS, $links);
+		unset($links);
+		return $model;
+	}
+
+	protected function parseIncludes($model)
+	{
+		$included = [];
+		foreach($this->includes as $type => $param)
+		{
+			if(!isset($param['transformer'])) continue;
+			$current = (new self(new $param['transformer'], $this->model->{$type}))->getRelationsShips();
+			if(isset($param['relationships']) && count($param['relationships'])) {
+				$current[Mapper::ATTR_RELATIONSHIP] = [];
+				foreach ($param['relationships'] as $childType => $childParam) {
+					if (!isset($this->model->{$type}->{$childType})) continue;
+					$relTransformer = new $childParam['transformer'];
+
+					if ($this->model->{$type}->{$childType} instanceof Illuminate\Support\Collection) {
+						$current[Mapper::ATTR_RELATIONSHIP][$childType] = [];
+						foreach ($this->model->{$type}->{$childType} as $modelChild) {
+							$current[Mapper::ATTR_RELATIONSHIP][$childType][] = [
+								'type' => $relTransformer->getAlias(),
+								'id' => $modelChild->id
+							];
+
+							$included[] = (new self($relTransformer, $modelChild))->getRelationsShips();
+						}
+						continue;
+					}
+
+					$current[Mapper::ATTR_RELATIONSHIP] = [
+						$childType => [
+							'type' => $relTransformer->getAlias(),
+							'id' => (int) $this->model->{$type}->{$childType}->id
+						]
+					];
+
+					$included[] = (new self($relTransformer, $this->model->{$type}->{$childType}))->getRelationsShips();
+				}
+			}
+
+			$included[] = $current;
+		}
+
+
+		$this->setInclude($included);
+		return $model;
+	}
+
+	public function getRelationsShips()
+	{
+		if($this->model instanceof \Illuminate\Database\Eloquent\Collection)
+			return $this->transformCollection($this->model);
+		else
+			return $this->transformModel($this->model);
+	}
+
+	protected function parseMeta($model)
+	{
+		$meta = [];
+		foreach($this->transformer->getMeta() as $method)
+		{
+			if(!method_exists(get_class($this->model), 'get' . ucfirst($method))) continue;
+			$meta = array_merge($meta, $this->model->{'get' . ucfirst($method)}());
+		}
+
+		if(count($meta))
+			$model->put(Mapper::ATTR_META, $meta);
+
+		return $model;
 	}
 }
