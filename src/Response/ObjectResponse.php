@@ -150,7 +150,8 @@ class ObjectResponse
 
 	protected function getAttributes($model)
 	{
-		$model = collect($model->attributesToArray());
+		$model = collect($this->shakeAttributes($model));
+
 		if(Request::has('filter.' . $this->transformer->getAlias()))
 			return $model->only(explode(',', Request::input('filter.' . $this->transformer->getAlias())));
 
@@ -205,7 +206,7 @@ class ObjectResponse
 				if(in_array($type, ['name']) || strpos($type, 'as_') === false || empty($attributes->get($value))) continue;
 				$routeParam[ltrim($type, 'as_')] = $attributes->get($value);
 			}
-			
+
 			$links[$link] = route($linkParam['name'], $routeParam);
 		}
 
@@ -298,5 +299,24 @@ class ObjectResponse
 		}
 
 		return $model;
+	}
+
+	protected function shakeAttributes($model)
+	{
+		$asKeys = [];
+		foreach($model->attributesToArray() as $key => $value) {
+			if(strpos($key, "_") === false || strpos($key, "_id") !== false) {
+				$asKeys[$key] = $value;
+				continue;
+			}
+
+			$newKey = [];
+			foreach(explode('_', $key) as $chunk)
+				$newKey[] = empty($newKey) ? $chunk : ucfirst($chunk);
+
+			$asKeys[join('', $newKey)] = $value;
+		}
+
+		return $asKeys;
 	}
 }
