@@ -150,7 +150,7 @@ class ObjectResponse
 
 	protected function getAttributes($model)
 	{
-		$model = collect($model->getAttributes());
+		$model = collect($model->attributesToArray());
 		if(Request::has('filter.' . $this->transformer->getAlias()))
 			return $model->only(explode(',', Request::input('filter.' . $this->transformer->getAlias())));
 
@@ -196,11 +196,12 @@ class ObjectResponse
 	protected function parseUrls($model)
 	{
 		$links = [];
+
 		foreach($this->transformer->getUrls() as $link => $linkParam)
 		{
 			$routeParam = [];
 			foreach($linkParam as $type => $value) {
-				if(in_array($type, ['name']) || strpos($type, 'as_') === false || empty($model->get($value))) continue;
+				if(in_array($type, ['name']) || strpos($type, 'as_') === false || empty($model->get('attributes')->get($value))) continue;
 				$routeParam[ltrim($type, 'as_')] = $model->get($value);
 			}
 
@@ -294,7 +295,7 @@ class ObjectResponse
 			$this->responseBody->put(Mapper::ATTR_META, $meta);
 			$model->put(Mapper::ATTR_META, $meta);
 		}
-		
+
 		return $model;
 	}
 }
