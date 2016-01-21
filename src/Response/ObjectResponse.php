@@ -201,10 +201,11 @@ class ObjectResponse
 		{
 			$routeParam = [];
 			foreach($linkParam as $type => $value) {
-				if(in_array($type, ['name']) || strpos($type, 'as_') === false || empty($model->get('attributes')->get($value))) continue;
-				$routeParam[ltrim($type, 'as_')] = $model->get($value);
+				$attributes = empty($model->get('attributes')) ? $model : $model->get('attributes');
+				if(in_array($type, ['name']) || strpos($type, 'as_') === false || empty($attributes->get($value))) continue;
+				$routeParam[ltrim($type, 'as_')] = $attributes->get($value);
 			}
-
+			
 			$links[$link] = route($linkParam['name'], $routeParam);
 		}
 
