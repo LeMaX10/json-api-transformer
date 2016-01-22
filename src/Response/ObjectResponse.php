@@ -145,7 +145,7 @@ class ObjectResponse
 
 	protected function getIdentifier($model)
 	{
-		return 1;
+		return is_array($model) ? $model['id'] : $model->id;
 	}
 
 	protected function getAttributes($model)
