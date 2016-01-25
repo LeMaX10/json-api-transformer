@@ -150,7 +150,7 @@ class ObjectResponse
 
 	protected function getAttributes($model)
 	{
-		$model = collect($this->shakeAttributes($model));
+		$model = collect($model);
 
 		if(Request::has('filter.' . $this->transformer->getAlias()))
 			return $model->only(explode(',', Request::input('filter.' . $this->transformer->getAlias())));
@@ -167,7 +167,7 @@ class ObjectResponse
 			}
 		}
 
-		return $model;
+		return $this->shakeAttributes($model);
 	}
 
 	public function addData($data)
@@ -303,20 +303,15 @@ class ObjectResponse
 
 	protected function shakeAttributes($model)
 	{
-		$asKeys = [];
-		foreach($model->attributesToArray() as $key => $value) {
-			if(strpos($key, "_") === false || strpos($key, "_id") !== false) {
-				$asKeys[$key] = $value;
-				continue;
-			}
-
+		foreach($model->toArray() as $key => $value) {
+			if(strpos($key, "_") === false || strpos($key, "_id") !== false) continue;
 			$newKey = [];
 			foreach(explode('_', $key) as $chunk)
-				$newKey[] = empty($newKey) ? $chunk : ucfirst($chunk);
+				$newKey[] = empty($newKey) ? strtolower($chunk) : ucfirst($chunk);
 
-			$asKeys[join('', $newKey)] = $value;
+			$model->put(join('', $newKey), $value)->pull($key);
 		}
 
-		return $asKeys;
+		return $model;
 	}
 }
