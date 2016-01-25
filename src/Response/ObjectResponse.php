@@ -226,10 +226,9 @@ class ObjectResponse
 			$relationShips[$type] = [
 				'data' => [
 					'type' => $selfTransformer->getAlias(),
-					'id'   => (int) $this->model->{$type}->first()->id
+					'id'   => (int) $this->model->{$type}->id
 				]
 			];
-
 			$current = (new self($selfTransformer, $this->model->{$type}))->getRelationsShips();
 
 			if(isset($param['relationships']) && count($param['relationships'])) {
