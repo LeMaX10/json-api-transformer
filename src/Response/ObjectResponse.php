@@ -2,6 +2,7 @@
 namespace lemax10\JsonApiTransformer\Response;
 
 use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
 use lemax10\JsonApiTransformer\Mapper;
 use Request;
 
@@ -19,11 +20,25 @@ class ObjectResponse
 	{
 
 		$this->responseBody = new Collection(['jsonapi'   => '1.0']);
-		$this->transformer = $transformer;
+		$this->setTransformer($transformer);
 		if($model) {
 			$this->model = $model;
 			$this->initIncludes();
 		}
+	}
+
+	protected function setTransformer($transformer)
+	{
+		$this->transformer = $transformer;
+		return $this;
+	}
+
+	protected function newInstance($transformer, $model)
+	{
+		if(!is_object($transformer))
+			$transformer = new $transformer;
+
+		return new self($transformer, $model);
 	}
 
 	protected function initIncludes()
@@ -55,7 +70,7 @@ class ObjectResponse
 		if(count($this->relation)) foreach($this->relation as $type => $typeOpt)
 		{
 			if(!isset($this->includes[$type]['transformer']) && isset($typeOpt['autowired']) && $typeOpt['autowired'] === true) {
-				if(strpos($type, '.') === false) {
+				if(Str::contains($type, '.') === false) {
 					$this->includes[$type]['transformer'] = $typeOpt['transformer'];
 					continue;
 				}
@@ -184,6 +199,9 @@ class ObjectResponse
 
 	public function setInclude($include)
 	{
+		if(!empty($this->responseBody->get(Mapper::ATTR_INCLUDES)))
+			$include = array_merge($include, array_diff($this->responseBody->get(Mapper::ATTR_INCLUDES), $include));
+
 		$this->responseBody->put(Mapper::ATTR_INCLUDES, $include);
 		return $this;
 	}
@@ -203,7 +221,7 @@ class ObjectResponse
 			$routeParam = [];
 			foreach($linkParam as $type => $value) {
 				$attributes = empty($model->get('attributes')) ? $model : $model->get('attributes');
-				if(in_array($type, ['name']) || strpos($type, 'as_') === false || empty($attributes->get($value))) continue;
+				if(in_array($type, ['name']) || Str::contains($type, 'as_') === false || empty($attributes->get($value))) continue;
 				$routeParam[ltrim($type, 'as_')] = $attributes->get($value);
 			}
 
@@ -221,7 +239,6 @@ class ObjectResponse
 		$relationShips = [];
 		foreach($this->includes as $type => $param)
 		{
-			if(!isset($param['transformer'])) continue;
 			$selfTransformer = new $param['transformer'];
 			$relationShips[$type] = [
 				'data' => [
@@ -229,12 +246,12 @@ class ObjectResponse
 					'id'   => (int) $this->model->{$type}->id
 				]
 			];
+
 			$current = (new self($selfTransformer, $this->model->{$type}))->getRelationsShips();
 
 			if(isset($param['relationships']) && count($param['relationships'])) {
 				$current[Mapper::ATTR_RELATIONSHIP] = [];
 				foreach ($param['relationships'] as $childType => $childParam) {
-					if (!isset($this->model->{$type}->{$childType})) continue;
 					$relTransformer = new $childParam['transformer'];
 
 					if ($this->model->{$type}->{$childType} instanceof Illuminate\Support\Collection) {
@@ -247,7 +264,7 @@ class ObjectResponse
 								]
 							];
 
-							$included[] = (new self($relTransformer, $modelChild))->getRelationsShips();
+							$included[$childParam['transformer'].':'. $modelChild->id] = $this->newInstance($relTransformer, $modelChild)->getRelationsShips();
 						}
 						continue;
 					}
@@ -261,16 +278,16 @@ class ObjectResponse
 						]
 					];
 
-					$included[] = (new self($relTransformer, $this->model->{$type}->{$childType}))->getRelationsShips();
+					$included[$childParam['transformer'] .':'. $this->model->{$type}->{$childType}->id] = $this->newInstance($relTransformer, $this->model->{$type}->{$childType})->getRelationsShips();
 				}
 			}
 
-			$included[] = $current;
+			$included[$param['transformer'] .':'. $this->model->{$type}->id] = $current;
 		}
 
 		if(count($included)) {
 			$model->put(Mapper::ATTR_RELATIONSHIP, $relationShips);
-			$this->setInclude($included);
+			$this->setInclude(array_values($included));
 		}
 		return $model;
 	}
@@ -279,6 +296,8 @@ class ObjectResponse
 	{
 		if($this->model instanceof \Illuminate\Database\Eloquent\Collection)
 			return $this->transformCollection($this->model);
+		elseif(is_array($this->model))
+			return $this->transformCollection(collect($this->model));
 		else
 			return $this->transformModel($this->model);
 	}
@@ -288,8 +307,8 @@ class ObjectResponse
 		$meta = [];
 		foreach($this->transformer->getMeta() as $method)
 		{
-			if(!method_exists(get_class($this->model), 'get' . ucfirst($method))) continue;
-			$meta = array_merge($meta, $this->model->{'get' . ucfirst($method)}());
+			if(!method_exists(get_class($this->model), 'get' . Str::ucfirst($method))) continue;
+			$meta = array_merge($meta, $this->model->{'get' . Str::ucfirst($method)}());
 		}
 
 		if(count($meta)) {
@@ -303,12 +322,8 @@ class ObjectResponse
 	protected function shakeAttributes($model)
 	{
 		foreach($model->toArray() as $key => $value) {
-			if(strpos($key, "_") === false || strpos($key, "_id") !== false) continue;
-			$newKey = [];
-			foreach(explode('_', $key) as $chunk)
-				$newKey[] = empty($newKey) ? strtolower($chunk) : ucfirst($chunk);
-
-			$model->put(join('', $newKey), $value)->pull($key);
+			if(Str::contains($key, "_") === false || Str::contains($key, "_id") !== false) continue;
+			$model->put(Str::camel($key), $value)->pull($key);
 		}
 
 		return $model;

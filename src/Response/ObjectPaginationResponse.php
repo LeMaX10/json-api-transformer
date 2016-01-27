@@ -1,23 +1,36 @@
 <?php
 namespace lemax10\JsonApiTransformer\Response;
 
+use App\Http\Requests\PaginationRequest;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Collection;
 use lemax10\JsonApiTransformer\Mapper;
 use Request;
 class ObjectPaginationResponse extends ObjectResponse {
 
 	protected $pagination;
+	protected $pageName = 'page';
+	protected $pageSizeAttr = 'size';
+	protected $pageNumberAttr = 'number';
+	protected $pageSortAttr = 'sort';
 
-	public function __construct($transformer, $object)
+	protected $request;
+
+	public function __construct($transformer, $object, PaginationRequest $request)
 	{
 		$this->responseBody = new Collection(['jsonapi'   => '1.0']);
 		$this->transformer = $transformer;
+		$this->request     = $request;
 		if($object) {
-			$this->model = $object;
+			Paginator::currentPageResolver(function (){
+				return $this->request->input(join('.', [$this->pageName, $this->pageNumberAttr]), 1);
+			});
+
+			$this->model = $this->parseSort($object);
 			$this->initIncludes();
 
-			$this->pagination = $this->model->paginate(Request::input('page.size', 10));
+			$this->pagination = $this->model->paginate($request->input(join('.', [$this->pageName, $this->pageSizeAttr]), 10));
 			$this->model = $this->pagination->getCollection();
 		}
 	}
@@ -45,9 +58,12 @@ class ObjectPaginationResponse extends ObjectResponse {
 		return parent::response();
 	}
 
-	protected function getLinks()
+	protected function getLinks() : array
 	{
 		$this->pagination->setPageName('page[number]')->appends('page[size]', $this->pagination->perPage());
+		if($this->request->has(join('.', [$this->pageName, $this->pageSortAttr])))
+			$this->pagination->appends('page[sort]', $this->request->input(join('.', [$this->pageName, $this->pageSortAttr])));
+
 		$links = [
 			'self' => $this->pagination->url($this->pagination->currentPage()),
 			'first' => $this->pagination->url(1)
@@ -63,7 +79,7 @@ class ObjectPaginationResponse extends ObjectResponse {
 		return $links;
 	}
 
-	protected function getMetaLinks()
+	protected function getMetaLinks() : array
 	{
 		return [
 			'total-pages' => $this->pagination->lastPage(),
@@ -71,5 +87,30 @@ class ObjectPaginationResponse extends ObjectResponse {
 			'currentPage' => $this->pagination->currentPage(),
 		];
 	}
+
+	private function parseSort($model)
+	{
+		if(!($sort = $this->request->input(join('.', [$this->pageName, $this->pageSortAttr]), false)))
+			return $model;
+
+		$key = '';
+		foreach(explode(',', $sort) as $attr) {
+			if(empty($key)) {
+				$key = static::uncamelcase($attr);
+				continue;
+			}
+
+			$model->orderBy($key, in_array($attr, ['asc', 'desc']) ? $attr : 'desc');
+			$key = '';
+		}
+
+		return $model;
+	}
+
+	public static function uncamelcase($key, $delimeter="_") : string
+	{
+		return strtolower(preg_replace('/(?!^)[[:upper:]][[:lower:]]/', '$0', preg_replace('/(?!^)[[:upper:]]+/', $delimeter.'$0', $key)));
+	}
+
 
 }
