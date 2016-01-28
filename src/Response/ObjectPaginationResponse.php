@@ -20,7 +20,7 @@ class ObjectPaginationResponse extends ObjectResponse {
 	public function __construct($transformer, $object, PaginationRequest $request)
 	{
 		$this->responseBody = new Collection(['jsonapi'   => '1.0']);
-		$this->transformer = $transformer;
+		$this->setTransformer($transformer);
 		$this->request     = $request;
 		if($object) {
 			Paginator::currentPageResolver(function (){
@@ -38,10 +38,7 @@ class ObjectPaginationResponse extends ObjectResponse {
 	public function initIncludes()
 	{
 		$this->relation = $this->transformer->getRelationships();
-		$this->queryIncludes();
-		$this->autowiredIncludes();
-
-		if(count($this->includes))
+		if(count($this->getLoadingIncluded()))
 			$this->model->with($this->getLoadingIncluded());
 	}
 
