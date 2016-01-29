@@ -15,10 +15,10 @@ class ObjectResponse
 	protected $responseBody;
 	protected $transformer;
 	protected $model;
-
+	protected $timer;
 	public function __construct($transformer, $object)
 	{
-
+		$this->timer['full'] = microtime(true);
 		$this->responseBody = new Collection(['jsonapi'   => '1.0']);
 		$this->setTransformer($transformer);
 		if($object) {
@@ -64,11 +64,13 @@ class ObjectResponse
 
 	public function response()
 	{
+		$this->timer['response'] = microtime(true);
 		return response()->json($this->getResponse($this->model));
 	}
 
 	public function getResponse()
 	{
+		$this->timer['model'] = microtime(true);
 		if($this->model instanceof \Illuminate\Database\Eloquent\Collection)
 			$this->setData($this->transformCollection($this->model));
 		else
@@ -76,6 +78,13 @@ class ObjectResponse
 
 		if(!empty($this->responseBody->get(Mapper::ATTR_INCLUDES)))
 			$this->responseBody->put(Mapper::ATTR_INCLUDES, array_values($this->responseBody->get(Mapper::ATTR_INCLUDES)));
+
+		$this->responseBody->put('DEBUG', [
+			'fullTransform' => round((microtime(true) - $this->timer['full']) * 1000) . 'ms',
+			'responseTransform' => round((microtime(true) - $this->timer['response']) * 1000) . 'ms',
+			'relationTransform' => round((microtime(true) - $this->timer['relation']) * 1000) . 'ms',
+			'modelTransform'    => round((microtime(true) - $this->timer['model']) * 1000) . 'ms'
+		]);
 
 		return $this->responseBody;
 	}
@@ -151,6 +160,7 @@ class ObjectResponse
 
 	protected function parseRelations($model)
 	{
+		$this->timer['relation'] = microtime(true);
 		$return = [];
 		$includes = [];
 		$originalTransformer = $this->transformer;

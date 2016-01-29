@@ -19,6 +19,7 @@ class ObjectPaginationResponse extends ObjectResponse {
 
 	public function __construct($transformer, $object, PaginationRequest $request)
 	{
+		parent::__construct($transformer, $object);
 		$this->responseBody = new Collection(['jsonapi'   => '1.0']);
 		$this->setTransformer($transformer);
 		$this->request     = $request;
