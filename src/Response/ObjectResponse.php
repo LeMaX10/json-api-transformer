@@ -15,7 +15,7 @@ class ObjectResponse
 	protected $responseBody;
 	protected $transformer;
 	protected $model;
-	protected $timer;
+	protected $timer = [];
 	public function __construct($transformer, $object)
 	{
 		$this->timer['full'] = microtime(true);
@@ -79,12 +79,20 @@ class ObjectResponse
 		if(!empty($this->responseBody->get(Mapper::ATTR_INCLUDES)))
 			$this->responseBody->put(Mapper::ATTR_INCLUDES, array_values($this->responseBody->get(Mapper::ATTR_INCLUDES)));
 
-		$this->responseBody->put('DEBUG', [
+		$times = [
 			'fullTransform' => round((microtime(true) - $this->timer['full']) * 1000) . 'ms',
-			'responseTransform' => round((microtime(true) - $this->timer['response']) * 1000) . 'ms',
-			'relationTransform' => round((microtime(true) - $this->timer['relation']) * 1000) . 'ms',
-			'modelTransform'    => round((microtime(true) - $this->timer['model']) * 1000) . 'ms'
-		]);
+		];
+
+		if(isset($this->timer['response']))
+			$times['responseTransform'] =  round((microtime(true) - $this->timer['response']) * 1000) . 'ms';
+
+		if(isset($this->timer['relation']))
+			$times['relationTransform'] = round((microtime(true) - $this->timer['relation']) * 1000) . 'ms';
+
+		if(isset($this->time['model']))
+			$times['modelTransform']    = round((microtime(true) - $this->timer['model']) * 1000) . 'ms';
+
+		$this->responseBody->put('DEBUG', $timers);
 
 		return $this->responseBody;
 	}
