@@ -92,7 +92,7 @@ class ObjectResponse
 		if(isset($this->time['model']))
 			$times['modelTransform']    = round((microtime(true) - $this->timer['model']) * 1000) . 'ms';
 
-		$this->responseBody->put('DEBUG', $timers);
+		$this->responseBody->put('DEBUG', $times);
 
 		return $this->responseBody;
 	}
