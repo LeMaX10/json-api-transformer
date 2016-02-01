@@ -128,7 +128,7 @@ class ObjectResponse
 			$responseModel->put(Mapper::ATTR_RELATIONSHIP, $this->parseRelations($model));
 
 		if(count($this->transformer->getUrls()))
-			$responseModel = $this->parseUrls($collectModel);
+			$responseModel = $this->parseUrls($responseModel);
 
 		if(count($this->transformer->getMeta()))
 			$this->parseMeta($responseModel);
