@@ -1,6 +1,7 @@
 <?php
 namespace lemax10\JsonApiTransformer\Response;
 
+use lemax10\JsonApiTransformer\Relations\PivotApi;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use lemax10\JsonApiTransformer\Mapper;
@@ -56,6 +57,7 @@ class ObjectResponse
 	public function setCast($cast)
 	{
 		$this->cast = new $cast;
+		$this->setTransformer($this->getCast());
 		return $this;
 	}
 
@@ -134,9 +136,6 @@ class ObjectResponse
 
 	protected function transformModel($model)
 	{
-		if($model === false)
-			$model = $this->model;
-
 		$collectModel = collect($model);
 
 		$responseModel = new Collection([
@@ -148,8 +147,8 @@ class ObjectResponse
 		if(count($this->transformer->getUrls()))
 			$responseModel = $this->parseUrls($responseModel);
 
-		if(count($model->getRelations()) && $this->merge === false)
-			$responseModel->put(Mapper::ATTR_RELATIONSHIP, $this->parseRelations($model));
+		if(count($model->getRelations()) && $this->merge === false && count($relationShips = $this->parseRelations($model)))
+			$responseModel->put(Mapper::ATTR_RELATIONSHIP, $relationShips);
 		else
 			$responseModel = $this->mergeRelations($responseModel, $model);
 
@@ -161,9 +160,6 @@ class ObjectResponse
 
 	protected function getType()
 	{
-		if ($this->getCast() !== false)
-			return $this->getCast()->getAlias();
-
 		return $this->transformer->getAlias();
 	}
 
@@ -201,6 +197,9 @@ class ObjectResponse
 
 		foreach($model->getRelations() as $key => $relation)
 		{
+			if($relation instanceof PivotApi)
+				break;
+
 			if($relation instanceof Collection) {
 				$collection = $relation->each(function($item) use(&$return, $key, &$includes) {
 					$transformer = $item::getTransformer();
@@ -214,9 +213,9 @@ class ObjectResponse
 
 					$identity = sha1(serialize($current));
 					if(empty($includes->get($identity)))
-						$includes->put($identity, $this->setTransformer($transformer)->transformModel($item));
+						$includes->put($identity, $this->newInstance($transformer, $item)->transformModel($item));
 					else
-						$includes->get($identity)->merge($this->setTransformer($transformer)->transformModel($item));
+						$includes->get($identity)->merge($this->newInstance($transformer, $item)->transformModel($item));
 				});
 
 				continue;
@@ -230,9 +229,9 @@ class ObjectResponse
 
 			$identity = sha1(serialize($return[$key]['data']));
 			if(empty($includes->get($identity)))
-				$includes->put($identity, $this->setTransformer($transformer)->transformModel($relation));
+				$includes->put($identity, $this->newInstance($transformer, $relation)->transformModel($relation));
 			else
-				$includes->get($identity)->merge($this->setTransformer($transformer)->transformModel($relation));
+				$includes->get($identity)->merge($this->newInstance($transformer, $relation)->transformModel($relation));
 		}
 		$this->setTransformer($originalTransformer);
 
@@ -247,7 +246,9 @@ class ObjectResponse
 			})->merge($this->responseBody->get(Mapper::ATTR_INCLUDES));
 		}
 
-		$this->responseBody->put(Mapper::ATTR_INCLUDES, $includes);
+		if($includes->count() > 0)
+			$this->responseBody->put(Mapper::ATTR_INCLUDES, $includes);
+
 		return $return;
 	}
 
