@@ -36,6 +36,9 @@ class Mapper
     protected $model;
     protected $paginate = false;
     protected $hide = [];
+
+    protected $cast = false;
+
     public function __construct($transformer)
     {
         $this->transformer = new $transformer;
@@ -51,15 +54,24 @@ class Mapper
         return response()->json($this->responseBody, 200);
     }
 
-    public function toJsonObjectResponse($object)
+    public function toJsonObjectResponse($object, $merge = false)
     {
-        return (new ObjectResponse($this->transformer, $object))->response();
+        $objectBuilder = new ObjectResponse($this->transformer, $object, $merge);
+        if($this->getCast() !== false)
+            $objectBuilder->setCast($this->getCast());
+
+        return $objectBuilder->response();
     }
 
-    public function toJsonPaginationResponse($result, PaginationRequest $request)
+    public function toJsonPaginationResponse($result, PaginationRequest $request, $merge = false)
     {
         $this->paginate = true;
-        return (new ObjectPaginationResponse($this->transformer, $this->checkModel($result), $request))->response();
+
+        $objectBuilder = new ObjectPaginationResponse($this->transformer, $this->checkModel($result), $request, $merge);
+        if($this->getCast() !== false)
+            $objectBuilder->setCast($this->getCast());
+
+        return $objectBuilder->response();
     }
 
     protected function checkModel($model)
@@ -73,5 +85,16 @@ class Mapper
             self::ATTR_TYPE => $type,
             self::ATTR_ATTRIBUTES => $attributes
         ];
+    }
+
+    public function setCast($cast)
+    {
+        $this->cast = $cast;
+        return $this;
+    }
+
+    public function getCast()
+    {
+        return $this->cast;
     }
 }

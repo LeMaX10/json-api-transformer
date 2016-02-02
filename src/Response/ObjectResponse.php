@@ -16,11 +16,18 @@ class ObjectResponse
 	protected $transformer;
 	protected $model;
 	protected $timer = [];
-	public function __construct($transformer, $object)
+
+	protected $merge = false;
+	protected $cast = false;
+
+	public function __construct($transformer, $object, $merge = false)
 	{
 		$this->timer['full'] = microtime(true);
 		$this->responseBody = new Collection(['jsonapi'   => '1.0']);
 		$this->setTransformer($transformer);
+
+		$this->merge = $merge;
+
 		if($object) {
 			$this->model = $object;
 			$this->initIncludes();
@@ -39,6 +46,17 @@ class ObjectResponse
 			$transformer = new $transformer;
 
 		return new self($transformer, $model);
+	}
+
+	public function getCast()
+	{
+		return $this->cast;
+	}
+
+	public function setCast($cast)
+	{
+		$this->cast = new $cast;
+		return $this;
 	}
 
 	protected function initIncludes()
@@ -65,7 +83,7 @@ class ObjectResponse
 	public function response()
 	{
 		$this->timer['response'] = microtime(true);
-		return response()->json($this->getResponse($this->model));
+		return response()->json($this->getResponse());
 	}
 
 	public function getResponse()
@@ -77,7 +95,7 @@ class ObjectResponse
 			$this->setData([$this->transformModel($this->model)]);
 
 		if(!empty($this->responseBody->get(Mapper::ATTR_INCLUDES)))
-			$this->responseBody->put(Mapper::ATTR_INCLUDES, array_values($this->responseBody->get(Mapper::ATTR_INCLUDES)));
+			$this->responseBody->put(Mapper::ATTR_INCLUDES, $this->responseBody->get(Mapper::ATTR_INCLUDES)->values());
 
 		$times = [
 			'fullTransform' => round((microtime(true) - $this->timer['full']) * 1000) . 'ms',
@@ -93,7 +111,6 @@ class ObjectResponse
 			$times['modelTransform']    = round((microtime(true) - $this->timer['model']) * 1000) . 'ms';
 
 		$this->responseBody->put('DEBUG', $times);
-
 		return $this->responseBody;
 	}
 
@@ -117,18 +134,24 @@ class ObjectResponse
 
 	protected function transformModel($model)
 	{
+		if($model === false)
+			$model = $this->model;
+
 		$collectModel = collect($model);
+
 		$responseModel = new Collection([
 			Mapper::ATTR_TYPE => $this->getType(),
 			Mapper::ATTR_IDENTIFIER => $this->getIdentifier($collectModel),
 			Mapper::ATTR_ATTRIBUTES => $this->getAttributes($collectModel)
 		]);
 
-		if(count($model->getRelations()))
-			$responseModel->put(Mapper::ATTR_RELATIONSHIP, $this->parseRelations($model));
-
 		if(count($this->transformer->getUrls()))
 			$responseModel = $this->parseUrls($responseModel);
+
+		if(count($model->getRelations()) && $this->merge === false)
+			$responseModel->put(Mapper::ATTR_RELATIONSHIP, $this->parseRelations($model));
+		else
+			$responseModel = $this->mergeRelations($responseModel, $model);
 
 		if(count($this->transformer->getMeta()))
 			$this->parseMeta($responseModel);
@@ -138,6 +161,9 @@ class ObjectResponse
 
 	protected function getType()
 	{
+		if ($this->getCast() !== false)
+			return $this->getCast()->getAlias();
+
 		return $this->transformer->getAlias();
 	}
 
@@ -170,7 +196,7 @@ class ObjectResponse
 	{
 		$this->timer['relation'] = microtime(true);
 		$return = [];
-		$includes = [];
+		$includes = new Collection();
 		$originalTransformer = $this->transformer;
 
 		foreach($model->getRelations() as $key => $relation)
@@ -179,12 +205,18 @@ class ObjectResponse
 				$collection = $relation->each(function($item) use(&$return, $key, &$includes) {
 					$transformer = $item::getTransformer();
 
-					$return[$key]['data'][] = [
+					$current = [
 						'type' => (new $transformer)->getAlias(),
 						'id' => $item->id
 					];
 
-					$includes[(new $transformer)->getAlias().$item->id] = $this->setTransformer($transformer)->transformModel($item);
+					$return[$key]['data'][] = $current;
+
+					$identity = sha1(serialize($current));
+					if(empty($includes->get($identity)))
+						$includes->put($identity, $this->setTransformer($transformer)->transformModel($item));
+					else
+						$includes->get($identity)->merge($this->setTransformer($transformer)->transformModel($item));
 				});
 
 				continue;
@@ -196,15 +228,54 @@ class ObjectResponse
 				'id' => $relation->id
 			];
 
-			$includes[(new $transformer)->getAlias().$relation->id] = $this->setTransformer($transformer)->transformModel($relation);
+			$identity = sha1(serialize($return[$key]['data']));
+			if(empty($includes->get($identity)))
+				$includes->put($identity, $this->setTransformer($transformer)->transformModel($relation));
+			else
+				$includes->get($identity)->merge($this->setTransformer($transformer)->transformModel($relation));
 		}
 		$this->setTransformer($originalTransformer);
 
-		if(!empty($this->responseBody->get(Mapper::ATTR_INCLUDES)))
-			$includes = array_merge($this->responseBody->get(Mapper::ATTR_INCLUDES), $includes);
+		if(!empty($this->responseBody->get(Mapper::ATTR_INCLUDES))) {
+			$includes = $includes->transform(function($value, $key) {
+				if(empty($this->responseBody->get(Mapper::ATTR_INCLUDES)->get($key)))
+					return $value;
+
+				$getOld = $this->responseBody->get(Mapper::ATTR_INCLUDES)->get($key);
+
+				return $getOld->merge($getOld);
+			})->merge($this->responseBody->get(Mapper::ATTR_INCLUDES));
+		}
 
 		$this->responseBody->put(Mapper::ATTR_INCLUDES, $includes);
 		return $return;
+	}
+
+	protected function mergeRelations($responseModel, $mergeModel)
+	{
+		if(!$mergeModel->getRelations() || $this->merge === false)
+			return $responseModel;
+
+		$originalTransformer = $this->transformer;
+		foreach($mergeModel->getRelations() as $relationModel)
+		{
+			if($relationModel instanceof Collection) continue;
+
+			$relation = $this->newInstance($relationModel::getTransformer(), $relationModel)->transformModel($relationModel);
+
+			if(empty($relation->get(Mapper::ATTR_ATTRIBUTES))) continue;
+
+			$responseModel->put(Mapper::ATTR_IDENTIFIER, $relation->get(Mapper::ATTR_IDENTIFIER));
+			$responseModel->put(Mapper::ATTR_ATTRIBUTES, $responseModel->get(Mapper::ATTR_ATTRIBUTES)->merge($relation->get(Mapper::ATTR_ATTRIBUTES)));
+
+			if(!empty($relation->get(Mapper::ATTR_LINKS)) && !empty($responseModel->get(Mapper::ATTR_LINKS)))
+				$responseModel->put(Mapper::ATTR_LINKS, array_merge($responseModel->get(Mapper::ATTR_LINKS), $relation->get(Mapper::ATTR_LINKS)));
+			else if(!empty($relation->get(Mapper::ATTR_LINKS)))
+				$responseModel->put(Mapper::ATTR_LINKS, $relation->get(Mapper::ATTR_LINKS));
+		}
+
+		$this->setTransformer($originalTransformer);
+		return $responseModel;
 	}
 
 	protected function parseUrls($model)

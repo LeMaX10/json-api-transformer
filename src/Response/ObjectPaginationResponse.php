@@ -17,9 +17,9 @@ class ObjectPaginationResponse extends ObjectResponse {
 
 	protected $request;
 
-	public function __construct($transformer, $object, PaginationRequest $request)
+	public function __construct($transformer, $object, PaginationRequest $request, $merge = false)
 	{
-		parent::__construct($transformer, $object);
+		parent::__construct($transformer, $object, $merge);
 		$this->responseBody = new Collection(['jsonapi'   => '1.0']);
 		$this->setTransformer($transformer);
 		$this->request     = $request;
@@ -109,6 +109,4 @@ class ObjectPaginationResponse extends ObjectResponse {
 	{
 		return strtolower(preg_replace('/(?!^)[[:upper:]][[:lower:]]/', '$0', preg_replace('/(?!^)[[:upper:]]+/', $delimeter.'$0', $key)));
 	}
-
-
 }
