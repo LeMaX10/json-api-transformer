@@ -293,14 +293,14 @@ class ObjectResponse
 				if(empty($responseModel->get(Mapper::ATTR_RELATIONSHIP)))
 					$responseModel->put(Mapper::ATTR_RELATIONSHIP, $relation->get(Mapper::ATTR_RELATIONSHIP));
 				else
-					$responseModel->put(Mapper::ATTR_RELATIONSHIP, array_merge($responseModel->get(Mapper::ATTR_RELATIONSHIP), $responseModel->get(Mapper::ATTR_RELATIONSHIP)));
+					$responseModel->put(Mapper::ATTR_RELATIONSHIP, array_merge($responseModel->get(Mapper::ATTR_RELATIONSHIP), $relation->get(Mapper::ATTR_RELATIONSHIP)));
 			}
 
 			if(!empty($relationTransformation->getResponseBody()->get(Mapper::ATTR_INCLUDES))) {
 				if(empty($this->responseBody->get(Mapper::ATTR_INCLUDES)))
 					$this->responseBody->put(Mapper::ATTR_INCLUDES, $relationTransformation->getResponseBody()->get(Mapper::ATTR_INCLUDES));
 				else
-					$this->responseBody->put(Mapper::ATTR_INCLUDES, array_merge($responseModel->get(Mapper::ATTR_INCLUDES), $relationTransformation->getResponseBody()->get(Mapper::ATTR_INCLUDES)));
+					$this->responseBody->put(Mapper::ATTR_INCLUDES, $this->responseBody->get(Mapper::ATTR_INCLUDES)->merge($relationTransformation->getResponseBody()->get(Mapper::ATTR_INCLUDES)));
 			}
 		}
 
