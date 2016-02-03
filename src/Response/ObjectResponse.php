@@ -20,15 +20,15 @@ class ObjectResponse
 
 	protected $merge = false;
 	protected $cast = false;
-
-	public function __construct($transformer, $object, $merge = false)
+	protected $InjectIncludes;
+	public function __construct($transformer, $object, $merge = false, $includes = true)
 	{
 		$this->timer['full'] = microtime(true);
 		$this->responseBody = new Collection(['jsonapi'   => '1.0']);
 		$this->setTransformer($transformer);
 
 		$this->merge = $merge;
-
+		$this->InjectIncludes = $includes;
 		if($object) {
 			$this->model = $object;
 			$this->initIncludes();
@@ -46,7 +46,7 @@ class ObjectResponse
 		if(!is_object($transformer))
 			$transformer = new $transformer;
 
-		return new self($transformer, $model);
+		return new self($transformer, $model, false, false);
 	}
 
 	public function getCast()
@@ -57,7 +57,6 @@ class ObjectResponse
 	public function setCast($cast)
 	{
 		$this->cast = new $cast;
-		$this->setTransformer($this->getCast());
 		return $this;
 	}
 
@@ -70,6 +69,9 @@ class ObjectResponse
 
 	protected function getLoadingIncluded()
 	{
+		if(!$this->InjectIncludes)
+			return [];
+
 		$relations = [];
 		if(Request::has('includes'))
 			$relations = array_merge($relations, explode(',', Request::input('includes')));
@@ -86,6 +88,11 @@ class ObjectResponse
 	{
 		$this->timer['response'] = microtime(true);
 		return response()->json($this->getResponse());
+	}
+
+	public function getResponseBody()
+	{
+		return $this->responseBody;
 	}
 
 	public function getResponse()
@@ -160,6 +167,9 @@ class ObjectResponse
 
 	protected function getType()
 	{
+		if($this->getCast() !== false)
+			return $this->getCast()->getAlias();
+
 		return $this->transformer->getAlias();
 	}
 
@@ -175,6 +185,7 @@ class ObjectResponse
 
 		if(count($this->transformer->getHideProperties()))
 			$collectModel = $collectModel->except($this->transformer->getHideProperties());
+
 
 		if(count($this->transformer->getAliasedProperties())) {
 			foreach($this->transformer->getAliasedProperties() as $modelField => $aliasField) {
@@ -213,9 +224,9 @@ class ObjectResponse
 
 					$identity = sha1(serialize($current));
 					if(empty($includes->get($identity)))
-						$includes->put($identity, $this->newInstance($transformer, $item)->transformModel($item));
+						$includes->put($identity, $this->setTransformer($transformer)->transformModel($item));
 					else
-						$includes->get($identity)->merge($this->newInstance($transformer, $item)->transformModel($item));
+						$includes->get($identity)->merge($this->setTransformer($transformer)->transformModel($item));
 				});
 
 				continue;
@@ -229,9 +240,9 @@ class ObjectResponse
 
 			$identity = sha1(serialize($return[$key]['data']));
 			if(empty($includes->get($identity)))
-				$includes->put($identity, $this->newInstance($transformer, $relation)->transformModel($relation));
+				$includes->put($identity, $this->setTransformer($transformer)->transformModel($relation));
 			else
-				$includes->get($identity)->merge($this->newInstance($transformer, $relation)->transformModel($relation));
+				$includes->get($identity)->merge($this->setTransformer($transformer)->transformModel($relation));
 		}
 		$this->setTransformer($originalTransformer);
 
@@ -258,21 +269,39 @@ class ObjectResponse
 			return $responseModel;
 
 		$originalTransformer = $this->transformer;
+		$includes = [];
 		foreach($mergeModel->getRelations() as $relationModel)
 		{
 			if($relationModel instanceof Collection) continue;
 
-			$relation = $this->newInstance($relationModel::getTransformer(), $relationModel)->transformModel($relationModel);
+			$relationTransformation = $this->newInstance($relationModel::getTransformer(), $relationModel);
+			$relation = $relationTransformation->transformModel($relationModel);
 
 			if(empty($relation->get(Mapper::ATTR_ATTRIBUTES))) continue;
 
 			$responseModel->put(Mapper::ATTR_IDENTIFIER, $relation->get(Mapper::ATTR_IDENTIFIER));
 			$responseModel->put(Mapper::ATTR_ATTRIBUTES, $responseModel->get(Mapper::ATTR_ATTRIBUTES)->merge($relation->get(Mapper::ATTR_ATTRIBUTES)));
 
-			if(!empty($relation->get(Mapper::ATTR_LINKS)) && !empty($responseModel->get(Mapper::ATTR_LINKS)))
-				$responseModel->put(Mapper::ATTR_LINKS, array_merge($responseModel->get(Mapper::ATTR_LINKS), $relation->get(Mapper::ATTR_LINKS)));
-			else if(!empty($relation->get(Mapper::ATTR_LINKS)))
-				$responseModel->put(Mapper::ATTR_LINKS, $relation->get(Mapper::ATTR_LINKS));
+			if(!empty($relation->get(Mapper::ATTR_LINKS))) {
+				if(empty($responseModel->get(Mapper::ATTR_LINKS)))
+					$responseModel->put(Mapper::ATTR_LINKS, $relation->get(Mapper::ATTR_LINKS));
+				else
+					$responseModel->put(Mapper::ATTR_LINKS, array_merge($responseModel->get(Mapper::ATTR_LINKS), $relation->get(Mapper::ATTR_LINKS)));
+			}
+
+			if(!empty($relation->get(Mapper::ATTR_RELATIONSHIP))) {
+				if(empty($responseModel->get(Mapper::ATTR_RELATIONSHIP)))
+					$responseModel->put(Mapper::ATTR_RELATIONSHIP, $relation->get(Mapper::ATTR_RELATIONSHIP));
+				else
+					$responseModel->put(Mapper::ATTR_RELATIONSHIP, array_merge($responseModel->get(Mapper::ATTR_RELATIONSHIP), $responseModel->get(Mapper::ATTR_RELATIONSHIP)));
+			}
+
+			if(!empty($relationTransformation->getResponseBody()->get(Mapper::ATTR_INCLUDES))) {
+				if(empty($this->responseBody->get(Mapper::ATTR_INCLUDES)))
+					$this->responseBody->put(Mapper::ATTR_INCLUDES, $relationTransformation->getResponseBody()->get(Mapper::ATTR_INCLUDES));
+				else
+					$this->responseBody->put(Mapper::ATTR_INCLUDES, array_merge($responseModel->get(Mapper::ATTR_INCLUDES), $relationTransformation->getResponseBody()->get(Mapper::ATTR_INCLUDES)));
+			}
 		}
 
 		$this->setTransformer($originalTransformer);
