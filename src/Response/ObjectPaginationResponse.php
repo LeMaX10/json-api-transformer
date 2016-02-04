@@ -31,8 +31,10 @@ class ObjectPaginationResponse extends ObjectResponse {
 			$this->model = $this->parseSort($object);
 			$this->initIncludes();
 
-			$this->pagination = $this->model->paginate($request->input(join('.', [$this->pageName, $this->pageSizeAttr]), 10));
-			$this->model = $this->pagination->getCollection();
+			if($request->getPagination())
+				$this->pagination = $this->model->paginate($request->input(join('.', [$this->pageName, $this->pageSizeAttr]), 10));
+
+			$this->model = ($request->getPagination() ? $this->pagination->getCollection() : $this->model->get());
 		}
 	}
 
@@ -51,13 +53,18 @@ class ObjectPaginationResponse extends ObjectResponse {
 
 	public function response()
 	{
+
 		$this->responseBody->put(Mapper::ATTR_LINKS, $this->getLinks());
 		$this->responseBody->put(Mapper::ATTR_META, $this->getMetaLinks());
+
 		return parent::response();
 	}
 
 	protected function getLinks() : array
 	{
+		if ($this->request->getPagination() !== true)
+			return [];
+
 		$this->pagination->setPageName('page[number]')->appends('page[size]', $this->pagination->perPage());
 		if($this->request->has(join('.', [$this->pageName, $this->pageSortAttr])))
 			$this->pagination->appends('page[sort]', $this->request->input(join('.', [$this->pageName, $this->pageSortAttr])));
@@ -79,6 +86,9 @@ class ObjectPaginationResponse extends ObjectResponse {
 
 	protected function getMetaLinks() : array
 	{
+		if ($this->request->getPagination() !== true)
+			return [];
+
 		return [
 			'total-pages' => $this->pagination->lastPage(),
 			'page-size'   => $this->pagination->perPage(),
