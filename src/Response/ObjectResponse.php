@@ -41,12 +41,12 @@ class ObjectResponse
 		return $this;
 	}
 
-	protected function newInstance($transformer, $model)
+	protected function newInstance($transformer, $model, $merge = false)
 	{
 		if(!is_object($transformer))
 			$transformer = new $transformer;
 
-		return new self($transformer, $model, false, false);
+		return new self($transformer, $model, $merge, false);
 	}
 
 	public function getCast()
@@ -208,6 +208,9 @@ class ObjectResponse
 
 		foreach($model->getRelations() as $key => $relation)
 		{
+
+			if(!isset($this->relation[$key])) continue;
+
 			if($relation instanceof PivotApi)
 				break;
 
