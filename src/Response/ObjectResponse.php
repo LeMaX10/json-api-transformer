@@ -208,9 +208,6 @@ class ObjectResponse
 
 		foreach($model->getRelations() as $key => $relation)
 		{
-
-			if(!isset($this->relation[$key])) continue;
-
 			if($relation instanceof PivotApi)
 				break;
 
