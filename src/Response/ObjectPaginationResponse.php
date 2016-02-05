@@ -54,8 +54,13 @@ class ObjectPaginationResponse extends ObjectResponse {
 	public function response()
 	{
 
-		$this->responseBody->put(Mapper::ATTR_LINKS, $this->getLinks());
-		$this->responseBody->put(Mapper::ATTR_META, $this->getMetaLinks());
+		if($this->request->getPagination() === true) {
+			$this->responseBody->put(Mapper::ATTR_LINKS, $this->getLinks());
+			$this->responseBody->put(Mapper::ATTR_META, $this->getMetaLinks());
+		} else {
+			$this->responseBody->pull(Mapper::ATTR_LINKS);
+			$this->responseBody->pull(Mapper::ATTR_META);
+		}
 
 		return parent::response();
 	}
